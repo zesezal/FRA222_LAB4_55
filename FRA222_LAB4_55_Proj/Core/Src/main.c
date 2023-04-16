@@ -51,6 +51,7 @@ UART_HandleTypeDef huart2;
 /* USER CODE BEGIN PV */
 uint32_t QEIReadRaw;
 float encoderDegree;
+float encoderDegreeTotal;
 typedef struct _QEIStructure
 {
 	uint32_t data[2]; //position data counter
@@ -62,6 +63,14 @@ typedef struct _QEIStructure
 QEIStructureTypedef QEIData = {0};
 
 uint64_t _micros = 0;
+float PWMsetter1 = 0;
+float PWMsetter2 = 0;
+float setpoint = 0;
+float Ki = 0;
+float Kp = 0;
+float rev = 0;
+float curDeg = 0;
+float prevDeg = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -121,7 +130,7 @@ HAL_TIM_Base_Start(&htim5);
 HAL_TIM_Base_Start(&htim1);
 HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 HAL_TIM_Base_Start(&htim2);
-HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
+HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -131,16 +140,35 @@ HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
 	  static uint32_t timestamp = 0;
 	  int currentTime = micros();
 	  if(currentTime>timestamp)// 10Hz
 	  {
+
 		  timestamp = HAL_GetTick() + 10000;
-//		  QEIReadRaw = __HAL_TIM_GET_COUNTER(&htim3);
+
 		  QEIEncoderPositionVelocity_Update();
-		  printf("Position = %ld\n",QEIReadRaw);
+		  if(setpoint - QEIData.QEIPosition > 1){
+			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,PWMsetter1);
+			  encoderDegree = (float) QEIData.QEIPosition*(360.0/3072.0);
+			  curDeg = encoderDegree;
+			  if ((prevDeg - curDeg) < 0){
+
+				  rev += 1;
+
+			  }
+			  encoderDegreeTotal = encoderDegree + (rev * 360);
+			  prevDeg = curDeg;
+
+		  }
+		  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,PWMsetter1);
+		  __HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_1,PWMsetter2);
+
+
 	  }
-	  encoderDegree = (float) QEIReadRaw*(360.0/3072.0);
+	  encoderDegree = (float) QEIData.QEIPosition*(360.0/3072.0);
+	  encoderDegreeTotal = encoderDegree + (rev * 360);
   }
   /* USER CODE END 3 */
 }
@@ -497,6 +525,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	{
 		_micros += UINT32_MAX;
 	}
+	if(htim == &htim3)
+		{
+			rev += 1;
+		}
 }
 
 uint64_t micros()
@@ -512,6 +544,7 @@ int _write(int file,char *ptr,int len)
 	}
 	return len;
 }
+
 void QEIEncoderPositionVelocity_Update()
 {
 	//collect data
@@ -537,6 +570,7 @@ void QEIEncoderPositionVelocity_Update()
 	QEIData.data[1] = QEIData.data[0];
 	QEIData.timestamp[1] = QEIData.timestamp[0];
 }
+
 /* USER CODE END 4 */
 
 /**
