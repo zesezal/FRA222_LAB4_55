@@ -54,11 +54,10 @@ float encoderDegree;
 float encoderDegreeTotal;
 typedef struct _QEIStructure
 {
-	uint32_t data[2]; //position data counter
-	uint64_t timestamp[2];
+	uint32_t data[1]; //position data counter
+	uint64_t timestamp[1];
+	float degree;
 
-	float QEIPosition; // step
-	float QEIVelocity; // step/sec
 }QEIStructureTypedef;
 QEIStructureTypedef QEIData = {0};
 
@@ -125,12 +124,12 @@ int main(void)
   MX_TIM1_Init();
   MX_TIM2_Init();
   /* USER CODE BEGIN 2 */
-HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_1|TIM_CHANNEL_2);
+HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_1|TIM_CHANNEL_2);
 HAL_TIM_Base_Start(&htim5);
 HAL_TIM_Base_Start(&htim1);
 HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
-HAL_TIM_Base_Start(&htim2);
-HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+HAL_TIM_Base_Start(&htim3);
+HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -145,31 +144,29 @@ HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
 	  int currentTime = micros();
 	  if(currentTime>timestamp)// 10Hz
 	  {
-
 		  timestamp = HAL_GetTick() + 10000;
-
 		  QEIEncoderPositionVelocity_Update();
-		  if(setpoint - QEIData.QEIPosition > 1){
-			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,PWMsetter1);
-			  encoderDegree = (float) QEIData.QEIPosition*(360.0/3072.0);
-			  curDeg = encoderDegree;
-			  if ((prevDeg - curDeg) < 0){
 
-				  rev += 1;
+		  if(QEIData.degree > 4000000){
+			  PWMsetter2 = 0;
+			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,500);
+		  }
+		  if(setpoint - encoderDegreeTotal > 1){
+			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,PWMsetter1);
+
 
 			  }
-			  encoderDegreeTotal = encoderDegree + (rev * 360);
-			  prevDeg = curDeg;
+
 
 		  }
 		  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,PWMsetter1);
-		  __HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_1,PWMsetter2);
+		  __HAL_TIM_SET_COMPARE(&htim3,TIM_CHANNEL_1,PWMsetter2);
 
 
 	  }
-	  encoderDegree = (float) QEIData.QEIPosition*(360.0/3072.0);
-	  encoderDegreeTotal = encoderDegree + (rev * 360);
-  }
+//	  encoderDegree = (float) QEIData.QEIPosition*(360.0/3072.0);
+//	  encoderDegreeTotal = encoderDegree + (rev * 360);
+
   /* USER CODE END 3 */
 }
 
@@ -306,29 +303,28 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 0 */
 
-  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_Encoder_InitTypeDef sConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
-  TIM_OC_InitTypeDef sConfigOC = {0};
 
   /* USER CODE BEGIN TIM2_Init 1 */
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 83;
+  htim2.Init.Prescaler = 0;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 9999;
+  htim2.Init.Period = QEI_PERIOD-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
-  if (HAL_TIM_ConfigClockSource(&htim2, &sClockSourceConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  if (HAL_TIM_PWM_Init(&htim2) != HAL_OK)
+  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
+  sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC1Filter = 0;
+  sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
+  sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
+  sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
+  sConfig.IC2Filter = 0;
+  if (HAL_TIM_Encoder_Init(&htim2, &sConfig) != HAL_OK)
   {
     Error_Handler();
   }
@@ -338,18 +334,9 @@ static void MX_TIM2_Init(void)
   {
     Error_Handler();
   }
-  sConfigOC.OCMode = TIM_OCMODE_PWM1;
-  sConfigOC.Pulse = 0;
-  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
-  if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
-  {
-    Error_Handler();
-  }
   /* USER CODE BEGIN TIM2_Init 2 */
 
   /* USER CODE END TIM2_Init 2 */
-  HAL_TIM_MspPostInit(&htim2);
 
 }
 
@@ -365,28 +352,29 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 0 */
 
-  TIM_Encoder_InitTypeDef sConfig = {0};
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
 
   /* USER CODE BEGIN TIM3_Init 1 */
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 0;
+  htim3.Init.Prescaler = 83;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim3.Init.Period = QEI_PERIOD-1;
+  htim3.Init.Period = 9999;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   htim3.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
-  sConfig.EncoderMode = TIM_ENCODERMODE_TI12;
-  sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
-  sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
-  sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
-  sConfig.IC1Filter = 0;
-  sConfig.IC2Polarity = TIM_ICPOLARITY_RISING;
-  sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
-  sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
-  sConfig.IC2Filter = 0;
-  if (HAL_TIM_Encoder_Init(&htim3, &sConfig) != HAL_OK)
+  if (HAL_TIM_Base_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim3, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
   {
     Error_Handler();
   }
@@ -396,9 +384,18 @@ static void MX_TIM3_Init(void)
   {
     Error_Handler();
   }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE BEGIN TIM3_Init 2 */
 
   /* USER CODE END TIM3_Init 2 */
+  HAL_TIM_MspPostInit(&htim3);
 
 }
 
@@ -525,10 +522,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	{
 		_micros += UINT32_MAX;
 	}
-	if(htim == &htim3)
-		{
-			rev += 1;
-		}
+
 }
 
 uint64_t micros()
@@ -549,26 +543,13 @@ void QEIEncoderPositionVelocity_Update()
 {
 	//collect data
 	QEIData.timestamp[0] = micros();
-	uint32_t counterPosition = __HAL_TIM_GET_COUNTER(&htim3);
+	uint64_t counterPosition = __HAL_TIM_GET_COUNTER(&htim2);
 	QEIData.data[0] = counterPosition;
 
 	//calculation
-	QEIData.QEIPosition = counterPosition % 3072;
+	QEIData.degree = ((float)QEIData.data[0] * 360.0 / 3072.0);
 
-	int32_t diffPosition = QEIData.data[0] - QEIData.data[1];
-	float difftime = (QEIData.timestamp[0] - QEIData.timestamp[1]);
 
-	//handle wrap-around
-	//this is how to divide 2 with fast : shift bits (can work with multiply 2 too)
-	// if the different is greater than half it mean warping occured;
-	if(diffPosition > QEI_PERIOD >> 1) diffPosition -= QEI_PERIOD;
-	if(diffPosition < -(QEI_PERIOD >> 1)) diffPosition += QEI_PERIOD;
-
-	//calculate angular velocity in pulse per sec
-	QEIData.QEIVelocity = ((float)diffPosition * 1000000.0)/difftime;
-
-	QEIData.data[1] = QEIData.data[0];
-	QEIData.timestamp[1] = QEIData.timestamp[0];
 }
 
 /* USER CODE END 4 */
