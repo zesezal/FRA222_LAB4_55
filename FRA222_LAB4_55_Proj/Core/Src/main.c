@@ -22,7 +22,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "arm_math.h"
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -50,26 +51,27 @@ UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
 uint32_t QEIReadRaw;
-float encoderDegree;
-float encoderDegreeTotal;
-typedef struct _QEIStructure
-{
-	uint32_t data[1]; //position data counter
-	uint64_t timestamp[1];
-	float degree;
 
-}QEIStructureTypedef;
-QEIStructureTypedef QEIData = {0};
-
+float differ;
 uint64_t _micros = 0;
 float PWMsetter1 = 0;
 float PWMsetter2 = 0;
 float setpoint = 0;
-float Ki = 0;
-float Kp = 0;
-float rev = 0;
-float curDeg = 0;
-float prevDeg = 0;
+
+float feedback = 0;
+float degree = 0;
+
+//PID variables
+float error = 0;
+float integral = 0;
+float derivative = 0;
+float errorPrev = 0;
+float integralPrev = 0;
+float PIDOut = 0;
+float KP = 0.1;
+float KI = 0.0001;
+float KD = 0.1;
+arm_pid_instance_f32 PID = {0};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -83,6 +85,9 @@ static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 inline uint64_t micros();
 void QEIEncoderPositionVelocity_Update();
+void PIDfunc(float input);
+
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -130,6 +135,11 @@ HAL_TIM_Base_Start(&htim1);
 HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 HAL_TIM_Base_Start(&htim3);
 HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+
+PID.Kp = 0.5;
+PID.Ki = 0.001;
+PID.Kd = 0;
+arm_pid_init_f32(&PID, 0);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -141,31 +151,57 @@ HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
     /* USER CODE BEGIN 3 */
 
 	  static uint32_t timestamp = 0;
-	  int currentTime = micros();
-	  if(currentTime>timestamp)// 10Hz
+//	  int currentTime = micros();
+	  if(HAL_GetTick()>timestamp)// 100Hz
 	  {
-		  timestamp = HAL_GetTick() + 10000;
-		  QEIEncoderPositionVelocity_Update();
+		  timestamp = HAL_GetTick() + 10;
+		  degree = ((float)__HAL_TIM_GET_COUNTER(&htim2)* 360.0 / 3072.0);
+		  differ = setpoint - degree;
+		  PIDfunc(degree);
 
-		  if(QEIData.degree > 4000000){
-			  PWMsetter2 = 0;
-			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,500);
+//		  feedback = arm_pid_f32(&PID, setpoint - degree);
+
+
+		  if (__HAL_TIM_GET_COUNTER(&htim2) > 307400 ){
+			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,1000);
+
 		  }
-		  if(setpoint - encoderDegreeTotal > 1){
-			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,PWMsetter1);
+
+		  if(-1 < differ && differ < 1 ){
+			  PWMsetter1 = 0;
+			  PWMsetter2 = 0;
+			  feedback = differ;
+
+		  }
+		  else if( differ > 1){
+			  //turn forward
+			  PWMsetter1 = (fabs(feedback)*10000.0/5.0);
+			  if (PWMsetter1 > 10000.0){
+				  PWMsetter1 = 10000.0;
+			  }
+
+			  PWMsetter2 = 0;
+
 
 
 			  }
+		  else if(differ < -1){
+			  	 //turn back
+			  PWMsetter2 = (fabs(feedback)*10000.0/5.0 ) ;
+			  if (PWMsetter2 > 10000.0){
+				  PWMsetter2 = 10000.0;
+			  }
+			  PWMsetter1 = 0;
 
-
+			  }
+			  __HAL_TIM_SET_COMPARE(&htim3,TIM_CHANNEL_1,PWMsetter2);
+			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,PWMsetter1);
 		  }
-		  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,PWMsetter1);
-		  __HAL_TIM_SET_COMPARE(&htim3,TIM_CHANNEL_1,PWMsetter2);
+
 
 
 	  }
-//	  encoderDegree = (float) QEIData.QEIPosition*(360.0/3072.0);
-//	  encoderDegreeTotal = encoderDegree + (rev * 360);
+
 
   /* USER CODE END 3 */
 }
@@ -539,18 +575,19 @@ int _write(int file,char *ptr,int len)
 	return len;
 }
 
-void QEIEncoderPositionVelocity_Update()
-{
-	//collect data
-	QEIData.timestamp[0] = micros();
-	uint64_t counterPosition = __HAL_TIM_GET_COUNTER(&htim2);
-	QEIData.data[0] = counterPosition;
+void PIDfunc(float input){
 
-	//calculation
-	QEIData.degree = ((float)QEIData.data[0] * 360.0 / 3072.0);
 
+	error = setpoint - input;
+	integral = integralPrev + error * 0.01;
+	derivative = (error-errorPrev) / 0.01;
+	PIDOut = (KP*error) + (KI*integral) + (KD*derivative);
+	errorPrev = error;
+	integralPrev = integral;
+	feedback = PIDOut;
 
 }
+
 
 /* USER CODE END 4 */
 
