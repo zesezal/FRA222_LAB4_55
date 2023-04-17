@@ -60,6 +60,7 @@ float setpoint = 0;
 
 float feedback = 0;
 float degree = 0;
+float position = 0;
 
 //PID variables
 float error = 0;
@@ -68,10 +69,9 @@ float derivative = 0;
 float errorPrev = 0;
 float integralPrev = 0;
 float PIDOut = 0;
-float KP = 0.1;
-float KI = 0.0001;
+float KP = 2.5;
+float KI = 0.00015;
 float KD = 0.1;
-arm_pid_instance_f32 PID = {0};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -84,7 +84,6 @@ static void MX_TIM1_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 inline uint64_t micros();
-void QEIEncoderPositionVelocity_Update();
 void PIDfunc(float input);
 
 
@@ -136,10 +135,6 @@ HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_1);
 HAL_TIM_Base_Start(&htim3);
 HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 
-PID.Kp = 0.5;
-PID.Ki = 0.001;
-PID.Kd = 0;
-arm_pid_init_f32(&PID, 0);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -151,33 +146,32 @@ arm_pid_init_f32(&PID, 0);
     /* USER CODE BEGIN 3 */
 
 	  static uint32_t timestamp = 0;
-//	  int currentTime = micros();
-	  if(HAL_GetTick()>timestamp)// 100Hz
+	  if(HAL_GetTick()>timestamp)// 1000Hz
 	  {
-		  timestamp = HAL_GetTick() + 10;
+		  timestamp = HAL_GetTick() + 1;
 		  degree = ((float)__HAL_TIM_GET_COUNTER(&htim2)* 360.0 / 3072.0);
 		  differ = setpoint - degree;
 		  PIDfunc(degree);
-
-//		  feedback = arm_pid_f32(&PID, setpoint - degree);
-
 
 		  if (__HAL_TIM_GET_COUNTER(&htim2) > 307400 ){
 			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,1000);
 
 		  }
 
-		  if(-1 < differ && differ < 1 ){
+		  if(-0.5 < differ && differ < 0.5 ){
 			  PWMsetter1 = 0;
 			  PWMsetter2 = 0;
 			  feedback = differ;
 
 		  }
-		  else if( differ > 1){
+		  if( differ > 0.5){
 			  //turn forward
-			  PWMsetter1 = (fabs(feedback)*10000.0/5.0);
+			  PWMsetter1 = (fabs(feedback)*1000.0/5.0);
 			  if (PWMsetter1 > 10000.0){
 				  PWMsetter1 = 10000.0;
+			  }
+			  if (PWMsetter1 < 200.0){
+				  PWMsetter1 = 200.0;
 			  }
 
 			  PWMsetter2 = 0;
@@ -185,11 +179,14 @@ arm_pid_init_f32(&PID, 0);
 
 
 			  }
-		  else if(differ < -1){
+		  if(differ < -0.5){
 			  	 //turn back
-			  PWMsetter2 = (fabs(feedback)*10000.0/5.0 ) ;
+			  PWMsetter2 = (fabs(feedback)*1000.0/5.0 ) ;
 			  if (PWMsetter2 > 10000.0){
 				  PWMsetter2 = 10000.0;
+			  }
+			  if (PWMsetter2 < 200.0){
+				  PWMsetter2 = 200.0;
 			  }
 			  PWMsetter1 = 0;
 
@@ -565,22 +562,14 @@ uint64_t micros()
 {
 	return __HAL_TIM_GET_COUNTER(&htim5)+_micros;
 }
-int _write(int file,char *ptr,int len)
-{
-	int i;
-	for (i = 0; i < len; i++)
-	{
-		ITM_SendChar(*ptr++);
-	}
-	return len;
-}
+
 
 void PIDfunc(float input){
 
 
 	error = setpoint - input;
-	integral = integralPrev + error * 0.01;
-	derivative = (error-errorPrev) / 0.01;
+	integral = integralPrev + error * 0.001;
+	derivative = (error-errorPrev) / 0.001;
 	PIDOut = (KP*error) + (KI*integral) + (KD*derivative);
 	errorPrev = error;
 	integralPrev = integral;
