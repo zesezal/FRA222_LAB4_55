@@ -151,12 +151,16 @@ HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 		  timestamp = HAL_GetTick() + 1;
 		  degree = ((float)__HAL_TIM_GET_COUNTER(&htim2)* 360.0 / 3072.0);
 		  differ = setpoint - degree;
-		  PIDfunc(degree);
-
-		  if (__HAL_TIM_GET_COUNTER(&htim2) > 307400 ){
-			  __HAL_TIM_SET_COMPARE(&htim1,TIM_CHANNEL_1,1000);
+		  if (degree > 36000 && setpoint < 10 ){
+			  differ = degree - 36000 ;
 
 		  }
+		  if (degree < 10 && setpoint > 35000 ){
+			  differ = 0 - degree ;
+
+		  }
+		  PIDfunc(degree);
+
 
 		  if(-0.5 < differ && differ < 0.5 ){
 			  PWMsetter1 = 0;
@@ -166,7 +170,7 @@ HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 		  }
 		  if( differ > 0.5){
 			  //turn forward
-			  PWMsetter1 = (fabs(feedback)*1000.0/5.0);
+			  PWMsetter1 = (fabs(feedback)*500.0/5.0);
 			  if (PWMsetter1 > 10000.0){
 				  PWMsetter1 = 10000.0;
 			  }
@@ -181,7 +185,7 @@ HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
 			  }
 		  if(differ < -0.5){
 			  	 //turn back
-			  PWMsetter2 = (fabs(feedback)*1000.0/5.0 ) ;
+			  PWMsetter2 = (fabs(feedback)*500.0/5.0 ) ;
 			  if (PWMsetter2 > 10000.0){
 				  PWMsetter2 = 10000.0;
 			  }
